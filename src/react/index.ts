@@ -22,5 +22,5 @@ export const generateReactHelpers = <TRouter extends FileRouter>(config: Raildro
     );
     return { startUpload, isUploading };
   };
-  return { ...uploader, useRaildrop, useUploadThing: useRaildrop };
+  return { ...uploader, useRaildrop };
 };
