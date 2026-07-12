@@ -8,9 +8,10 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "raildrop": "./dist/cli.js"
+    "raildrop": "./bin/raildrop.mjs"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE"
@@ -55,8 +56,10 @@
   "scripts": {
     "build": "tsup",
     "lint": "eslint src test",
+    "prepack": "pnpm build",
     "test": "tsx --test test/**/*.test.ts",
     "test:bundle": "node ./scripts/check-client-bundle.mjs",
+    "test:package": "pnpm build && node ./scripts/check-package.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
