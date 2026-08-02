@@ -60,7 +60,7 @@ export interface RaildropRoute<TInput = unknown, TMetadata = unknown, TOutput = 
 // Route metadata and callback output are intentionally erased at the router boundary;
 // endpoint-specific inference is retained by the concrete router object.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type FileRouter = Record<string, RaildropRoute<unknown, any, any>>;
+export type FileRouter = Record<string, RaildropRoute<any, any, any>>;
 
 export type InferEndpointInput<TRouter extends FileRouter, TEndpoint extends keyof TRouter> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
