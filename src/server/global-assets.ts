@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { encodeNamespace, namespace } from '../core';
 
-import type { RaildropStorage } from './storage';
+import type { RaildropStorage, RaildropStoredObject } from './storage';
 
 export interface GlobalAssetSource {
   alias: string;
@@ -28,6 +28,17 @@ export interface GlobalAssetManifest {
 
 export interface GlobalAssetSyncResult extends GlobalAssetManifest {
   orphanedKeys: string[];
+}
+
+export interface GlobalAssetMirrorTarget {
+  name: string;
+  storage: RaildropStorage;
+}
+
+export interface GlobalAssetMirrorResult {
+  targets: Record<string, { copied: number; verified: number }>;
+  objectCount: number;
+  manifestAssetCount: number;
 }
 
 export const GLOBAL_MANIFEST_KEY = 'public/global/_raildrop/manifest.json';
@@ -122,4 +133,159 @@ export const syncGlobalAssets = async (
   );
   const orphanedKeys = [...new Set(previousKeys)].filter((key) => !activeKeys.has(key));
   return { ...manifest, orphanedKeys };
+};
+
+const readObjectBytes = async (storage: RaildropStorage, key: string): Promise<Uint8Array> => {
+  const object = await storage.get(key);
+  if (!object) throw new Error(`Global asset disappeared while mirroring: ${key}`);
+  return new Uint8Array(await new Response(object.body as BodyInit).arrayBuffer());
+};
+
+const listAllGlobalObjects = async (storage: RaildropStorage) => {
+  const objects = [];
+  let continuationToken: string | undefined;
+  do {
+    const page = await storage.list('public/global/', continuationToken);
+    objects.push(...page.objects);
+    continuationToken = page.nextToken;
+  } while (continuationToken);
+  return objects;
+};
+
+const parseGlobalManifest = async (
+  storage: RaildropStorage
+): Promise<GlobalAssetManifest | null> => {
+  const object = await storage.get(GLOBAL_MANIFEST_KEY);
+  if (!object) return null;
+  const parsed: unknown = JSON.parse(await new Response(object.body as BodyInit).text());
+  if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.assets)) {
+    throw new Error('Invalid global asset manifest encountered while mirroring.');
+  }
+  return parsed as unknown as GlobalAssetManifest;
+};
+
+export const mirrorGlobalAssets = async (
+  targets: readonly GlobalAssetMirrorTarget[]
+): Promise<GlobalAssetMirrorResult> => {
+  if (targets.length < 2) throw new Error('At least two Raildrop mirror targets are required.');
+
+  const inventories = await Promise.all(
+    targets.map(async (target) => ({
+      ...target,
+      objects: await listAllGlobalObjects(target.storage),
+      manifest: await parseGlobalManifest(target.storage),
+    }))
+  );
+  const objectSources = new Map<
+    string,
+    { storage: RaildropStorage; object: RaildropStoredObject }
+  >();
+  for (const inventory of inventories) {
+    for (const object of inventory.objects) {
+      if (object.key === GLOBAL_MANIFEST_KEY) continue;
+      const existing = objectSources.get(object.key);
+      if (existing && existing.object.size !== object.size) {
+        throw new Error(`Global asset conflict for ${object.key}; refusing to overwrite it.`);
+      }
+      if (!existing) objectSources.set(object.key, { storage: inventory.storage, object });
+    }
+  }
+
+  const canonicalObjects = new Map<
+    string,
+    {
+      body: Uint8Array;
+      checksum: string;
+      contentType: string;
+      cacheControl?: string;
+      metadata: Record<string, string>;
+    }
+  >();
+
+  await Promise.all(
+    [...objectSources.entries()].map(async ([key, source]) => {
+      const body = await readObjectBytes(source.storage, key);
+      const checksum = createHash('sha256').update(body).digest('hex');
+      canonicalObjects.set(key, {
+        body,
+        checksum,
+        contentType: source.object.contentType ?? 'application/octet-stream',
+        ...(source.object.cacheControl ? { cacheControl: source.object.cacheControl } : {}),
+        metadata: source.object.metadata,
+      });
+    })
+  );
+
+  const assets: Record<string, GlobalAssetManifestEntry> = {};
+  for (const inventory of inventories) {
+    for (const [alias, entry] of Object.entries(inventory.manifest?.assets ?? {})) {
+      const existing = assets[alias];
+      if (existing && (existing.key !== entry.key || existing.checksum !== entry.checksum)) {
+        throw new Error(`Global asset alias conflict for ${alias}; refusing to merge manifests.`);
+      }
+      assets[alias] = entry;
+    }
+  }
+  for (const [alias, entry] of Object.entries(assets)) {
+    const object = canonicalObjects.get(entry.key);
+    if (!object) throw new Error(`Manifest entry ${alias} has no available global object.`);
+    if (object.checksum !== entry.checksum || object.body.byteLength !== entry.size) {
+      throw new Error(`Manifest entry ${alias} does not match an available global object.`);
+    }
+  }
+
+  const result: GlobalAssetMirrorResult = {
+    targets: {},
+    objectCount: canonicalObjects.size + 1,
+    manifestAssetCount: Object.keys(assets).length,
+  };
+  await Promise.all(
+    targets.map(async (target) => {
+      const outcomes = await Promise.all(
+        [...canonicalObjects.entries()].map(async ([key, object]) => {
+          const current = await target.storage.get(key);
+          const currentBytes = current
+            ? new Uint8Array(await new Response(current.body as BodyInit).arrayBuffer())
+            : null;
+          const currentChecksum = currentBytes
+            ? createHash('sha256').update(currentBytes).digest('hex')
+            : null;
+          if (currentChecksum && currentChecksum !== object.checksum) {
+            throw new Error(
+              `Global asset conflict for ${key} in ${target.name}; refusing to overwrite it.`
+            );
+          }
+          if (!current) {
+            await target.storage.put({
+              key,
+              body: object.body,
+              contentType: object.contentType,
+              cacheControl: object.cacheControl,
+              metadata: object.metadata,
+            });
+          }
+          const stored = await readObjectBytes(target.storage, key);
+          if (createHash('sha256').update(stored).digest('hex') !== object.checksum) {
+            throw new Error(`Global asset verification failed for ${key} in ${target.name}.`);
+          }
+          return { copied: current ? 0 : 1 };
+        })
+      );
+      await target.storage.put({
+        key: GLOBAL_MANIFEST_KEY,
+        body: JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), assets }),
+        contentType: 'application/json',
+        cacheControl: 'public, max-age=300, stale-while-revalidate=86400',
+        metadata: {
+          'raildrop-access': 'public',
+          'raildrop-retention': 'permanent',
+        },
+      });
+      result.targets[target.name] = {
+        copied: outcomes.reduce((total, outcome) => total + outcome.copied, 0),
+        verified: outcomes.length + 1,
+      };
+    })
+  );
+  return result;
 };

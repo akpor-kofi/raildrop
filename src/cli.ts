@@ -3,8 +3,11 @@ import { readFile, readdir } from 'node:fs/promises';
 import { extname, parse, resolve } from 'node:path';
 
 import { cleanupExpiredObjects } from './server/cleanup';
-import { syncGlobalAssets } from './server/global-assets';
+import { mirrorGlobalAssets, syncGlobalAssets } from './server/global-assets';
 import { RailwayBucketStorage, railwayBucketConfigFromEnv } from './server/storage';
+
+import type { GlobalAssetSyncResult } from './server/global-assets';
+import type { RaildropBucketConfig } from './server/storage';
 
 interface ManifestFile {
   assets: {
@@ -23,9 +26,46 @@ interface ManifestFile {
   }[];
 }
 
+const mirrorEnvironmentNames = ['development', 'staging', 'production'] as const;
+
+const readMirrorConfig = (environment: (typeof mirrorEnvironmentNames)[number]) => {
+  const prefix = `RAILDROP_${environment.toUpperCase()}_`;
+  const read = (name: string) => process.env[`${prefix}${name}`]?.trim();
+  const bucket = read('BUCKET');
+  const endpoint = read('ENDPOINT');
+  const accessKeyId = read('ACCESS_KEY_ID');
+  const secretAccessKey = read('SECRET_ACCESS_KEY');
+  const configured = [bucket, endpoint, accessKeyId, secretAccessKey].filter(Boolean).length;
+  if (configured === 0) return null;
+  if (configured !== 4) throw new Error(`Incomplete ${environment} Raildrop mirror credentials.`);
+  return {
+    name: environment,
+    config: {
+      bucket,
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      region: read('REGION') ?? 'auto',
+      forcePathStyle: read('FORCE_PATH_STYLE') === 'true',
+    } as RaildropBucketConfig,
+  };
+};
+
+const configuredStorages = () => {
+  const mirrorTargets = mirrorEnvironmentNames.flatMap((environment) => {
+    const target = readMirrorConfig(environment);
+    return target ? [{ name: target.name, storage: new RailwayBucketStorage(target.config) }] : [];
+  });
+  return mirrorTargets.length > 0
+    ? mirrorTargets
+    : [{ name: 'current', storage: new RailwayBucketStorage(railwayBucketConfigFromEnv()) }];
+};
+
 const main = async () => {
   const [command, argument] = process.argv.slice(2);
-  const storage = new RailwayBucketStorage(railwayBucketConfigFromEnv());
+  const targets = configuredStorages();
+  const storage = targets[0]?.storage;
+  if (!storage) throw new Error('No Raildrop bucket is configured.');
   if (command === 'health') {
     await storage.list('', undefined);
     process.stdout.write('Raildrop bucket connection is healthy.\n');
@@ -113,12 +153,22 @@ const main = async () => {
       )
     ).flat();
     const sources = [...fileSources, ...directorySources];
-    const result = await syncGlobalAssets(storage, sources);
+    const results: Record<string, GlobalAssetSyncResult> = {};
+    await Promise.all(
+      targets.map(async (target) => {
+        results[target.name] = await syncGlobalAssets(target.storage, sources);
+      })
+    );
+    process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+    return;
+  }
+  if (command === 'mirror') {
+    const result = await mirrorGlobalAssets(targets);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
   process.stderr.write(
-    'Usage: raildrop health | cleanup | cors | cors:apply | sync <manifest.json>\n'
+    'Usage: raildrop health | cleanup | cors | cors:apply | sync <manifest.json> | mirror\n'
   );
   process.exitCode = 1;
 };
