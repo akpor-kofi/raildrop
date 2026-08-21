@@ -43,28 +43,62 @@ export interface GlobalAssetMirrorResult {
 
 export const GLOBAL_MANIFEST_KEY = 'public/global/_raildrop/manifest.json';
 
+const GLOBAL_ASSET_ALIAS_PATTERN = /^[a-z0-9][a-z0-9-]{0,119}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const syncGlobalAssets = async (
+const isGlobalManifestEntry = (value: unknown): value is GlobalAssetManifestEntry => {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.key !== 'string' ||
+    !value.key.startsWith('public/global/') ||
+    value.key === GLOBAL_MANIFEST_KEY ||
+    typeof value.checksum !== 'string' ||
+    !SHA256_PATTERN.test(value.checksum) ||
+    !value.key.includes(`/${value.checksum}/file.`) ||
+    typeof value.size !== 'number' ||
+    !Number.isSafeInteger(value.size) ||
+    value.size < 0 ||
+    typeof value.contentType !== 'string' ||
+    value.contentType.length === 0 ||
+    typeof value.filename !== 'string' ||
+    value.filename.length === 0
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const parseGlobalManifest = async (
+  storage: RaildropStorage
+): Promise<GlobalAssetManifest | null> => {
+  const object = await storage.get(GLOBAL_MANIFEST_KEY);
+  if (!object) return null;
+  const parsed: unknown = JSON.parse(await new Response(object.body as BodyInit).text());
+  if (
+    !isRecord(parsed) ||
+    parsed.version !== 1 ||
+    typeof parsed.generatedAt !== 'string' ||
+    !isRecord(parsed.assets) ||
+    !Object.entries(parsed.assets).every(
+      ([alias, entry]) => GLOBAL_ASSET_ALIAS_PATTERN.test(alias) && isGlobalManifestEntry(entry)
+    )
+  ) {
+    throw new Error('Invalid global asset manifest encountered.');
+  }
+  return parsed as unknown as GlobalAssetManifest;
+};
+
+const writeGlobalAssetEntries = async (
   storage: RaildropStorage,
   sources: readonly GlobalAssetSource[]
-): Promise<GlobalAssetSyncResult> => {
-  const previousManifestObject = await storage.get(GLOBAL_MANIFEST_KEY);
-  let previousManifest: unknown = null;
-  if (previousManifestObject) {
-    try {
-      previousManifest = JSON.parse(
-        await new Response(previousManifestObject.body as BodyInit).text()
-      );
-    } catch {
-      previousManifest = null;
-    }
-  }
+): Promise<Record<string, GlobalAssetManifestEntry>> => {
   const assets: Record<string, GlobalAssetManifestEntry> = {};
   const aliases = new Set<string>();
   for (const source of sources) {
-    if (!/^[a-z0-9][a-z0-9-]{0,119}$/.test(source.alias)) {
+    if (!GLOBAL_ASSET_ALIAS_PATTERN.test(source.alias)) {
       throw new Error(`Invalid global asset alias: ${source.alias}`);
     }
     if (aliases.has(source.alias)) throw new Error(`Duplicate global asset alias: ${source.alias}`);
@@ -110,6 +144,13 @@ export const syncGlobalAssets = async (
       filename: source.filename,
     };
   }
+  return assets;
+};
+
+const writeGlobalManifest = async (
+  storage: RaildropStorage,
+  assets: Record<string, GlobalAssetManifestEntry>
+): Promise<GlobalAssetManifest> => {
   const manifest: GlobalAssetManifest = {
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -125,13 +166,52 @@ export const syncGlobalAssets = async (
       'raildrop-retention': 'permanent',
     },
   });
-  const activeKeys = new Set(Object.values(assets).map((asset) => asset.key));
-  const previousAssets: Record<string, unknown> =
-    isRecord(previousManifest) && isRecord(previousManifest.assets) ? previousManifest.assets : {};
+  return manifest;
+};
+
+const findOrphanedKeys = (
+  previousAssets: Record<string, unknown>,
+  activeAssets: Record<string, GlobalAssetManifestEntry>
+): string[] => {
+  const activeKeys = new Set(Object.values(activeAssets).map((asset) => asset.key));
   const previousKeys = Object.values(previousAssets).flatMap((asset) =>
     isRecord(asset) && typeof asset.key === 'string' ? [asset.key] : []
   );
-  const orphanedKeys = [...new Set(previousKeys)].filter((key) => !activeKeys.has(key));
+  return [...new Set(previousKeys)].filter((key) => !activeKeys.has(key));
+};
+
+export const syncGlobalAssets = async (
+  storage: RaildropStorage,
+  sources: readonly GlobalAssetSource[]
+): Promise<GlobalAssetSyncResult> => {
+  const previousManifestObject = await storage.get(GLOBAL_MANIFEST_KEY);
+  let previousManifest: unknown = null;
+  if (previousManifestObject) {
+    try {
+      previousManifest = JSON.parse(
+        await new Response(previousManifestObject.body as BodyInit).text()
+      );
+    } catch {
+      previousManifest = null;
+    }
+  }
+  const assets = await writeGlobalAssetEntries(storage, sources);
+  const manifest = await writeGlobalManifest(storage, assets);
+  const previousAssets: Record<string, unknown> =
+    isRecord(previousManifest) && isRecord(previousManifest.assets) ? previousManifest.assets : {};
+  const orphanedKeys = findOrphanedKeys(previousAssets, assets);
+  return { ...manifest, orphanedKeys };
+};
+
+export const upsertGlobalAssets = async (
+  storage: RaildropStorage,
+  sources: readonly GlobalAssetSource[]
+): Promise<GlobalAssetSyncResult> => {
+  const previousManifest = await parseGlobalManifest(storage);
+  const upsertedAssets = await writeGlobalAssetEntries(storage, sources);
+  const assets = { ...(previousManifest?.assets ?? {}), ...upsertedAssets };
+  const manifest = await writeGlobalManifest(storage, assets);
+  const orphanedKeys = findOrphanedKeys(previousManifest?.assets ?? {}, assets);
   return { ...manifest, orphanedKeys };
 };
 
@@ -150,18 +230,6 @@ const listAllGlobalObjects = async (storage: RaildropStorage) => {
     continuationToken = page.nextToken;
   } while (continuationToken);
   return objects;
-};
-
-const parseGlobalManifest = async (
-  storage: RaildropStorage
-): Promise<GlobalAssetManifest | null> => {
-  const object = await storage.get(GLOBAL_MANIFEST_KEY);
-  if (!object) return null;
-  const parsed: unknown = JSON.parse(await new Response(object.body as BodyInit).text());
-  if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.assets)) {
-    throw new Error('Invalid global asset manifest encountered while mirroring.');
-  }
-  return parsed as unknown as GlobalAssetManifest;
 };
 
 export const mirrorGlobalAssets = async (

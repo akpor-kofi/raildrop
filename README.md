@@ -44,8 +44,10 @@ through short-lived presigned GET URLs after application authorization.
 - `raildrop cors:apply` applies origin-restricted PUT/GET/HEAD CORS and verifies its methods and
   request-header support. Railway requires `AllowedHeaders: ['*']` for browser presigned uploads;
   origins remain an exact allowlist.
-- `raildrop sync <manifest.json>` synchronizes checksum-addressed global assets to every configured
-  development, staging, and production bucket.
+- `raildrop sync <manifest.json>` replaces the global manifest with checksum-addressed assets from
+  the supplied manifest in every configured bucket.
+- `raildrop upsert <manifest.json>` publishes checksum-addressed assets while preserving aliases
+  not present in the supplied manifest.
 - `raildrop mirror` merges and verifies `public/global/` across all configured buckets. It refuses
   to overwrite conflicting object keys or aliases and never reads or writes outside that prefix.
 - `raildrop cleanup` deletes expired temporary objects and old multipart uploads.

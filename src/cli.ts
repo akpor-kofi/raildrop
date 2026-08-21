@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { extname, parse, resolve } from 'node:path';
 
 import { cleanupExpiredObjects } from './server/cleanup';
-import { mirrorGlobalAssets, syncGlobalAssets } from './server/global-assets';
+import { mirrorGlobalAssets, syncGlobalAssets, upsertGlobalAssets } from './server/global-assets';
 import { RailwayBucketStorage, railwayBucketConfigFromEnv } from './server/storage';
 
 import type { GlobalAssetSyncResult } from './server/global-assets';
@@ -104,7 +104,7 @@ const main = async () => {
     if (missing.length > 0 || invalid.length > 0) process.exitCode = 1;
     return;
   }
-  if (command === 'sync' && argument) {
+  if ((command === 'sync' || command === 'upsert') && argument) {
     const manifestPath = resolve(argument);
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as ManifestFile;
     const manifestDirectory = resolve(manifestPath, '..');
@@ -156,7 +156,10 @@ const main = async () => {
     const results: Record<string, GlobalAssetSyncResult> = {};
     await Promise.all(
       targets.map(async (target) => {
-        results[target.name] = await syncGlobalAssets(target.storage, sources);
+        results[target.name] = await (command === 'upsert' ? upsertGlobalAssets : syncGlobalAssets)(
+          target.storage,
+          sources
+        );
       })
     );
     process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
@@ -168,7 +171,7 @@ const main = async () => {
     return;
   }
   process.stderr.write(
-    'Usage: raildrop health | cleanup | cors | cors:apply | sync <manifest.json> | mirror\n'
+    'Usage: raildrop health | cleanup | cors | cors:apply | sync <manifest.json> | upsert <manifest.json> | mirror\n'
   );
   process.exitCode = 1;
 };
