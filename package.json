@@ -68,7 +68,7 @@
     "@noble/hashes": "^2.2.0"
   },
   "peerDependencies": {
-    "expo-file-system": "~55.0.17",
+    "expo-file-system": "~55.0.25",
     "hono": "^4.7.12",
     "react": "19.2.0"
   },
