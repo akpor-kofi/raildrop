@@ -80,7 +80,7 @@
     "lint": "eslint src test",
     "prepack": "pnpm build",
     "test": "tsx --test test/**/*.test.ts",
-    "test:bundle": "node ./scripts/check-client-bundle.mjs",
+    "test:bundle": "pnpm build && node ./scripts/check-client-bundle.mjs",
     "test:package": "pnpm build && node ./scripts/check-package.mjs",
     "typecheck": "tsc --noEmit",
     "changeset": "changeset",
