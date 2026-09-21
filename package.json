@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "Type-safe uploads and public delivery for Railway Buckets and Railway CDN",
   "license": "MIT",
+  "author": "akpor-kofi (https://github.com/akpor-kofi)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akpor-kofi/raildrop.git"
+  },
+  "homepage": "https://github.com/akpor-kofi/raildrop#readme",
+  "bugs": "https://github.com/akpor-kofi/raildrop/issues",
+  "keywords": [
+    "s3",
+    "file-upload",
+    "uploads",
+    "presigned-urls",
+    "multipart-upload",
+    "resumable",
+    "react",
+    "react-native",
+    "expo",
+    "hono",
+    "railway",
+    "cdn",
+    "typescript"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -60,7 +82,9 @@
     "test": "tsx --test test/**/*.test.ts",
     "test:bundle": "node ./scripts/check-client-bundle.mjs",
     "test:package": "pnpm build && node ./scripts/check-package.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "changeset": "changeset",
+    "release": "changeset publish"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.850.0",
@@ -68,14 +92,10 @@
     "@noble/hashes": "^2.2.0"
   },
   "peerDependencies": {
-    "expo-file-system": "~55.0.26",
-    "hono": "^4.7.12",
-    "react": "19.2.0"
+    "hono": ">=4.0.0",
+    "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
-    "expo-file-system": {
-      "optional": true
-    },
     "hono": {
       "optional": true
     },
@@ -84,16 +104,23 @@
     }
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.0",
+    "@changesets/cli": "^2.29.0",
+    "@eslint/js": "^9.35.0",
     "@types/node": "*",
+    "@types/react": "^19.2.0",
+    "eslint": "^9.35.0",
     "hono": "^4.7.12",
     "react": "19.2.0",
     "tsup": "^8.5.0",
     "tsx": "4.22.4",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.43.0"
   },
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@11.6.0",
   "publishConfig": {
     "access": "public"
   },

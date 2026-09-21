@@ -1,7 +1,32 @@
-import rootConfig from '../../eslint.config.mjs';
+import eslint from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
-export default [
-  ...rootConfig,
+export default tseslint.config(
+  { ignores: ['dist/**', 'node_modules/**', '.cache/**', 'scripts/**'] },
+  eslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    files: ['src/**/*.ts', 'test/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/prefer-nullish-coalescing': 'error',
+      '@typescript-eslint/consistent-type-imports': [
+        'warn',
+        { fixStyle: 'inline-type-imports' },
+      ],
+      '@typescript-eslint/no-non-null-assertion': 'error',
+    },
+  },
   {
     files: ['test/**/*.ts'],
     rules: {
@@ -9,11 +34,5 @@ export default [
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/require-await': 'off',
     },
-  },
-  {
-    files: ['scripts/**/*.mjs'],
-    rules: {
-      '@typescript-eslint/prefer-nullish-coalescing': 'off',
-    },
-  },
-];
+  }
+);

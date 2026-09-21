@@ -347,7 +347,7 @@ export const genUploader = <TRouter extends FileRouter>({
           fetcher,
           file,
           entry,
-          options as RaildropUploadOptions<unknown>,
+          options,
           {
             concurrency: Math.max(1, partConcurrency),
             retryAttempts: Math.max(0, retryAttempts),

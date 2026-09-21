@@ -121,7 +121,7 @@ export class RaildropRouteBuilder<
     return new RaildropRouteBuilder({
       ...this._def,
       onUploadComplete: async (args) => callback(args),
-    } as RaildropRouteDefinition<TInput, TMetadata, TNextOutput>);
+    });
   }
 
   validate(
