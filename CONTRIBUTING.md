@@ -5,7 +5,7 @@ to go from clone to merged pull request.
 
 ## Development setup
 
-Requirements: Node 20+, pnpm 11 (Corepack handles this automatically).
+Requirements: Node 22.13+ (pnpm 11 requires it) — Corepack provides pnpm automatically.
 
 ```bash
 corepack enable
@@ -62,7 +62,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 5. Update the README if you changed public behavior.
 6. Open the PR with a clear description of what and why.
 
-CI runs lint, typecheck, tests, and the bundle guard on Node 20 and 22.
+CI runs lint, typecheck, tests, and the bundle guard on Node 22 and 24.
 All checks must pass before merge.
 
 ## Release process
