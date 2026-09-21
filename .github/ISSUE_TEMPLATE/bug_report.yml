@@ -1,0 +1,53 @@
+name: Bug report
+description: Report something broken in Raildrop
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug. Please search existing issues first.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include expected vs actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps or a code snippet that reproduces the issue.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Raildrop version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which entry point?
+      options:
+        - raildrop/server
+        - raildrop/client
+        - raildrop/react
+        - raildrop/expo
+        - raildrop/hono
+        - raildrop/testing
+        - CLI
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, OS, framework, runtime (Node/Bun/Workers/Expo)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Redact secrets, tokens, and signed URLs before pasting.
