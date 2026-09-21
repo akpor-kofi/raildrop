@@ -1,12 +1,14 @@
-# Raildrop
-
-Type-safe uploads and public delivery for S3-compatible buckets, built for Railway Buckets and Railway CDN.
+<div align="center">
+  <img src="https://raw.githubusercontent.com/akpor-kofi/raildrop/main/assets/wordmark.png" alt="raildrop" width="420" />
+  <p>Type-safe uploads and public delivery for S3-compatible buckets,<br/>built for Railway Buckets and Railway CDN.</p>
+  <p>
+    <a href="https://www.npmjs.com/package/raildrop"><img src="https://img.shields.io/npm/v/raildrop.svg" alt="npm version" /></a>
+    <a href="https://github.com/akpor-kofi/raildrop/actions/workflows/ci.yml"><img src="https://github.com/akpor-kofi/raildrop/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/npm/l/raildrop.svg" alt="license" /></a>
+  </p>
+</div>
 
 Raildrop is a community project and is not affiliated with or endorsed by Railway.
-
-[![npm version](https://img.shields.io/npm/v/raildrop.svg)](https://www.npmjs.com/package/raildrop)
-[![CI](https://github.com/akpor-kofi/raildrop/actions/workflows/ci.yml/badge.svg)](https://github.com/akpor-kofi/raildrop/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/raildrop.svg)](./LICENSE)
 
 ## Why Raildrop
 
@@ -251,6 +253,11 @@ session or account identity), and may pass a stable per-upload `resumeKey` such 
 ## Security
 
 Please report vulnerabilities privately — see [SECURITY.md](./SECURITY.md).
+
+## Brand assets
+
+The logo, wordmark, and monochrome glyph live in [`assets/`](./assets) and are
+available for use when referring to Raildrop.
 
 ## Contributing
 
