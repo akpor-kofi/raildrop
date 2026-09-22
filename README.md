@@ -52,6 +52,7 @@ out of the API entirely. If you want UploadThing's DX on your own bucket, Raildr
 | React          | `raildrop/react`  | React 18+ (web)                                       |
 | React Native   | `raildrop/expo`   | React Native with Expo (SDK 52+)                      |
 | Test utilities | `raildrop/testing`| Vitest, node:test, Jest — anything                    |
+| **Go server**  | [`sdk/go`](./sdk/go/README.md) | Go 1.22+ — `net/http` and any framework; Fiber via `fiberadapter` |
 
 ## Install
 
