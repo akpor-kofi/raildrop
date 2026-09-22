@@ -49,7 +49,7 @@ test('TypeScript reads tokens minted by the Go SDK', () => {
   assert.deepEqual(payload.input, { albumId: 7 });
   assert.equal(payload.multipart, null);
   assert.ok(fixture.metadataRaw.includes('9007199254740993'), 'fixture must carry an integer outside the safe range');
-  assert.equal(metadata.big, JSON.parse(fixture.metadataRaw).big);
+  assert.equal(metadata.big, (JSON.parse(fixture.metadataRaw) as { big: number }).big);
 });
 
 test('TypeScript-minted tokens stay stable across the fixture', () => {
