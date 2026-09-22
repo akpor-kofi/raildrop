@@ -1,6 +1,6 @@
 {
   "name": "raildrop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Type-safe uploads and public delivery for Railway Buckets and Railway CDN",
   "license": "MIT",
   "author": "akpor-kofi (https://github.com/akpor-kofi)",
