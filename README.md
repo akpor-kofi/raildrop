@@ -19,6 +19,19 @@ Raildrop is a community project and is not affiliated with or endorsed by Railwa
 - **Resumable multipart.** Failed parts retry, parts upload concurrently, and progress persists to local storage so interrupted uploads resume.
 - **Public delivery by default.** A signed public gateway serves normalized `public/` objects behind your CDN; private files resolve to short-lived presigned GET URLs after your own authorization.
 
+## Inspiration
+
+Raildrop is heavily inspired by [UploadThing](https://uploadthing.com) — its type-safe
+upload router DX (define routes on the server, infer everything on the client) is the
+developer experience we wanted to keep.
+
+We built Raildrop because UploadThing is a hosted, subscription-based service: your files
+flow through and live on third-party infrastructure. We wanted the same end-to-end
+type-safe workflow, but backed by **our own S3-compatible bucket** — specifically
+[Railway Buckets](https://railway.app) with the Railway CDN — so credentials never leave
+the server, there is no per-plan file quota, and direct-to-bucket uploads keep file bytes
+out of the API entirely. If you want UploadThing's DX on your own bucket, Raildrop is for you.
+
 ## Guarantees
 
 - Bucket credentials stay on the server.
