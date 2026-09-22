@@ -13,7 +13,15 @@ import (
 
 var jsIntegerKeyPattern = regexp.MustCompile(`^(?:0|[1-9][0-9]*)$`)
 
-const jsMaxArrayIndex = 4294967294
+const jsMaxSafeInteger = int64(1) << 53
+
+const jsMaxArrayIndex = uint64(4294967294)
+
+var (
+	rawMessageType    = reflect.TypeOf(json.RawMessage(nil))
+	jsonNumberType    = reflect.TypeOf(json.Number(""))
+	jsonMarshalerType = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+)
 
 func MarshalJSONJavaScript(value any) (json.RawMessage, error) {
 	var builder strings.Builder
@@ -23,7 +31,46 @@ func MarshalJSONJavaScript(value any) (json.RawMessage, error) {
 	return json.RawMessage(builder.String()), nil
 }
 
+func normalizeJSONJavaScript(value []byte) (json.RawMessage, error) {
+	if len(value) == 0 {
+		return nil, nil
+	}
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return nil, WrapError(CodeBadRequest, "Metadata is not valid JSON.", err)
+	}
+	return MarshalJSONJavaScript(decoded)
+}
+
 func appendJavaScriptJSON(builder *strings.Builder, value reflect.Value) error {
+	if value.IsValid() && value.Type() == rawMessageType {
+		if value.IsNil() {
+			builder.WriteString("null")
+			return nil
+		}
+		normalized, err := normalizeJSONJavaScript(value.Bytes())
+		if err != nil {
+			return err
+		}
+		builder.Write(normalized)
+		return nil
+	}
+	if value.IsValid() && value.Type() == jsonNumberType {
+		builder.WriteString(value.String())
+		return nil
+	}
+	if marshaler, ok := marshalerFor(value); ok {
+		output, err := marshaler.MarshalJSON()
+		if err != nil {
+			return WrapError(CodeBadRequest, "Custom JSON marshaler failed.", err)
+		}
+		normalized, err := normalizeJSONJavaScript(output)
+		if err != nil {
+			return err
+		}
+		builder.Write(normalized)
+		return nil
+	}
 	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
 		if value.IsNil() {
 			builder.WriteString("null")
@@ -45,9 +92,9 @@ func appendJavaScriptJSON(builder *strings.Builder, value reflect.Value) error {
 	case reflect.String:
 		appendJavaScriptString(builder, value.String())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		builder.WriteString(strconv.FormatInt(value.Int(), 10))
+		emitJSInteger(builder, value.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		builder.WriteString(strconv.FormatUint(value.Uint(), 10))
+		emitJSUnsignedInteger(builder, value.Uint())
 	case reflect.Float32, reflect.Float64:
 		encoded, err := json.Marshal(value.Float())
 		if err != nil {
@@ -94,6 +141,42 @@ func appendJavaScriptJSON(builder *strings.Builder, value reflect.Value) error {
 		return fmt.Errorf("raildrop: metadata value of type %s is not JSON-serializable", value.Type())
 	}
 	return nil
+}
+
+func marshalerFor(value reflect.Value) (json.Marshaler, bool) {
+	if !value.IsValid() || !value.CanInterface() {
+		return nil, false
+	}
+	if value.Kind() == reflect.Pointer && value.IsNil() {
+		return nil, false
+	}
+	if value.Type().Implements(jsonMarshalerType) {
+		marshaler, _ := value.Interface().(json.Marshaler)
+		return marshaler, true
+	}
+	if value.CanAddr() && value.Addr().Type().Implements(jsonMarshalerType) {
+		marshaler, _ := value.Addr().Interface().(json.Marshaler)
+		return marshaler, true
+	}
+	return nil, false
+}
+
+func emitJSInteger(builder *strings.Builder, value int64) {
+	if value > jsMaxSafeInteger || value < -jsMaxSafeInteger {
+		encoded, _ := json.Marshal(float64(value))
+		builder.Write(encoded)
+		return
+	}
+	builder.WriteString(strconv.FormatInt(value, 10))
+}
+
+func emitJSUnsignedInteger(builder *strings.Builder, value uint64) {
+	if value > uint64(jsMaxSafeInteger) {
+		encoded, _ := json.Marshal(float64(value))
+		builder.Write(encoded)
+		return
+	}
+	builder.WriteString(strconv.FormatUint(value, 10))
 }
 
 func appendJavaScriptArray(builder *strings.Builder, value reflect.Value) error {
@@ -158,19 +241,19 @@ func appendJavaScriptMap(builder *strings.Builder, value reflect.Value) error {
 type structField struct {
 	name      string
 	omitEmpty bool
+	parent    reflect.Value
 	index     int
 }
 
-func structFieldsOf(value reflect.Value) []structField {
-	fields := make([]structField, 0, value.NumField())
+func collectStructFields(value reflect.Value, fields *[]structField, seen map[string]bool) {
 	structType := value.Type()
 	for index := 0; index < structType.NumField(); index++ {
 		field := structType.Field(index)
-		if !field.IsExported() {
-			continue
-		}
 		tag := field.Tag.Get("json")
 		if tag == "-" {
+			continue
+		}
+		if !field.IsExported() && !field.Anonymous {
 			continue
 		}
 		name := field.Name
@@ -186,9 +269,34 @@ func structFieldsOf(value reflect.Value) []structField {
 				}
 			}
 		}
-		fields = append(fields, structField{name: name, omitEmpty: omitEmpty, index: index})
+		fieldValue := value.Field(index)
+		if field.Anonymous && tag == "" && isStructKind(field.Type) {
+			if field.Type.Kind() == reflect.Pointer {
+				if fieldValue.IsNil() {
+					continue
+				}
+				collectStructFields(fieldValue.Elem(), fields, seen)
+			} else {
+				collectStructFields(fieldValue, fields, seen)
+			}
+			continue
+		}
+		if !field.IsExported() {
+			continue
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		*fields = append(*fields, structField{name: name, omitEmpty: omitEmpty, parent: value, index: index})
 	}
-	return fields
+}
+
+func isStructKind(fieldType reflect.Type) bool {
+	if fieldType.Kind() == reflect.Struct {
+		return true
+	}
+	return fieldType.Kind() == reflect.Pointer && fieldType.Elem().Kind() == reflect.Struct
 }
 
 func isEmptyJSONValue(value reflect.Value) bool {
@@ -207,9 +315,11 @@ func isEmptyJSONValue(value reflect.Value) bool {
 }
 
 func appendJavaScriptStruct(builder *strings.Builder, value reflect.Value) error {
-	entries := make([]jsEntry, 0, value.NumField())
-	for _, field := range structFieldsOf(value) {
-		fieldValue := value.Field(field.index)
+	fields := make([]structField, 0, value.NumField())
+	collectStructFields(value, &fields, make(map[string]bool))
+	entries := make([]jsEntry, 0, len(fields))
+	for _, field := range fields {
+		fieldValue := field.parent.Field(field.index)
 		if field.omitEmpty && isEmptyJSONValue(fieldValue) {
 			continue
 		}

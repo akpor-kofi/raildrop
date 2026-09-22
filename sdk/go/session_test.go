@@ -62,13 +62,14 @@ func TestReadSessionTokenAcceptsTypeScriptTokens(t *testing.T) {
 		payload.ExpiresAt != nil {
 		t.Fatalf("decoded payload does not match the fixture: %+v", payload)
 	}
-	if string(payload.Metadata) != string(fixture.MetadataRaw) {
-		t.Fatalf("metadata bytes diverged: %s", string(payload.Metadata))
+	expectedV8Bytes := `{"2":"two","10":"ten","userId":"u_123","role":"admin","note":"line sep end","big":9007199254740992}`
+	if string(payload.Metadata) != expectedV8Bytes {
+		t.Fatalf("metadata bytes diverged from the V8 form: %s", string(payload.Metadata))
 	}
 	if string(payload.Input) != string(fixture.InputRaw) {
 		t.Fatalf("input bytes diverged: %s", string(payload.Input))
 	}
-	var metadata map[string]string
+	var metadata map[string]any
 	if err := json.Unmarshal(payload.Metadata, &metadata); err != nil {
 		t.Fatalf("metadata could not be decoded: %v", err)
 	}
@@ -77,6 +78,9 @@ func TestReadSessionTokenAcceptsTypeScriptTokens(t *testing.T) {
 	}
 	if metadata["note"] != "line\u2028sep\u2029end" {
 		t.Fatalf("metadata line separators diverged: %q", metadata["note"])
+	}
+	if metadata["big"] != float64(9007199254740992) {
+		t.Fatalf("unstable integer did not round-trip through the JavaScript number domain: %v", metadata["big"])
 	}
 }
 
@@ -89,15 +93,9 @@ func TestReadSessionTokenAcceptsGoTokens(t *testing.T) {
 	if payload.ID != "conformance-upload-id" || payload.Endpoint != "avatar" {
 		t.Fatalf("decoded payload does not match the fixture: %+v", payload)
 	}
-	if string(payload.Metadata) != string(fixture.MetadataRaw) {
-		t.Fatalf("metadata bytes diverged: %s", string(payload.Metadata))
-	}
-	var metadata map[string]string
-	if err := json.Unmarshal(payload.Metadata, &metadata); err != nil {
-		t.Fatalf("metadata could not be decoded: %v", err)
-	}
-	if metadata["note"] != "line\u2028sep\u2029end" {
-		t.Fatalf("metadata line separators diverged: %q", metadata["note"])
+	expectedNormalizedBytes := `{"2":"two","10":"ten","big":9007199254740992,"note":"line sep end","role":"admin","userId":"u_123"}`
+	if string(payload.Metadata) != expectedNormalizedBytes {
+		t.Fatalf("metadata bytes diverged from the normalized form: %s", string(payload.Metadata))
 	}
 }
 
@@ -111,7 +109,8 @@ func TestCreateSessionTokenRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("minted token was rejected: %v", err)
 	}
-	if payload.ID != "conformance-upload-id" || string(payload.Metadata) != string(fixture.MetadataRaw) {
+	expectedNormalizedBytes := `{"2":"two","10":"ten","big":9007199254740992,"note":"line sep end","role":"admin","userId":"u_123"}`
+	if payload.ID != "conformance-upload-id" || string(payload.Metadata) != expectedNormalizedBytes {
 		t.Fatalf("roundtrip diverged: %+v", payload)
 	}
 }

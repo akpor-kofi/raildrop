@@ -20,6 +20,7 @@ type ConformanceMetadata = {
   '2': string;
   '10': string;
   note: string;
+  big: number;
 };
 
 test('TypeScript reads tokens minted by the Go SDK', () => {
@@ -44,17 +45,18 @@ test('TypeScript reads tokens minted by the Go SDK', () => {
   assert.equal(metadata['2'], 'two');
   assert.equal(metadata['10'], 'ten');
   assert.equal(metadata.note, 'line\u2028sep\u2029end');
+  assert.equal(metadata.big, 9007199254740992);
   assert.deepEqual(payload.input, { albumId: 7 });
   assert.equal(payload.multipart, null);
-  assert.equal(JSON.stringify(payload.metadata), fixture.metadataRaw);
-  assert.equal(JSON.stringify(payload.input), fixture.inputRaw);
+  assert.ok(fixture.metadataRaw.includes('9007199254740993'), 'fixture must carry an integer outside the safe range');
+  assert.equal(metadata.big, JSON.parse(fixture.metadataRaw).big);
 });
 
 test('TypeScript-minted tokens stay stable across the fixture', () => {
   const payload = readSessionToken(fixture.tsToken, fixture.secret);
   assert.equal(payload.id, 'conformance-upload-id');
   assert.equal((payload.metadata as ConformanceMetadata).userId, 'u_123');
-  assert.equal(JSON.stringify(payload.metadata), fixture.metadataRaw);
+  assert.equal(JSON.stringify(payload.metadata), JSON.stringify(JSON.parse(fixture.metadataRaw)));
   assert.throws(
     () => readSessionToken(fixture.tsToken, 'another-secret-that-is-at-least-thirty-two-characters'),
     (error) => error instanceof Error && 'code' in error && (error as { code: string }).code === 'FORBIDDEN'

@@ -98,6 +98,13 @@ func CreateSessionToken(payload SessionPayload, secret string) (string, error) {
 		return "", fmt.Errorf("RAILDROP_SECRET must contain at least 32 characters")
 	}
 	payload.Version = 1
+	if len(payload.Metadata) > 0 {
+		normalized, err := normalizeJSONJavaScript(payload.Metadata)
+		if err != nil {
+			return "", err
+		}
+		payload.Metadata = normalized
+	}
 	payload.MetadataDigest = MetadataDigest(payload.Metadata)
 	rawPayload, err := MarshalJSON(payload)
 	if err != nil {

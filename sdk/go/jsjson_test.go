@@ -3,6 +3,7 @@ package raildrop
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestMarshalJSONJavaScriptMatchesV8Serialization(t *testing.T) {
@@ -88,4 +89,83 @@ func TestValidateRouteRulesRejectsMissingSize(t *testing.T) {
 		}
 	}()
 	DefineRoute(Rules{"image": {MaxFileCount: 1}}, RouteDefinition[any, map[string]string, map[string]any]{})
+}
+
+func TestMarshalJSONJavaScriptPreservesGoJSONSemantics(t *testing.T) {
+	type base struct {
+		Tenant string `json:"tenant"`
+	}
+	type metadata struct {
+		base
+		Role    string          `json:"role"`
+		Created time.Time       `json:"created"`
+		Extra   json.RawMessage `json:"extra"`
+		Count   json.Number     `json:"count"`
+	}
+	value := metadata{
+		base:    base{Tenant: "acme"},
+		Role:    "admin",
+		Created: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Extra:   json.RawMessage(`{"z":1,"a":2}`),
+		Count:   json.Number("42"),
+	}
+	actual, err := MarshalJSONJavaScript(value)
+	if err != nil {
+		t.Fatalf("metadata could not be serialized: %v", err)
+	}
+	expected := `{"tenant":"acme","role":"admin","created":"2024-01-02T03:04:05Z","extra":{"a":2,"z":1},"count":42}`
+	if string(actual) != expected {
+		t.Fatalf("embedded/marshaler metadata diverged:\n got %s\nwant %s", string(actual), expected)
+	}
+	var roundTrip metadata
+	if err := json.Unmarshal(actual, &roundTrip); err != nil {
+		t.Fatalf("metadata could not round-trip into the typed struct: %v", err)
+	}
+	if roundTrip.Tenant != "acme" || roundTrip.Role != "admin" || roundTrip.Count.String() != "42" {
+		t.Fatalf("typed round-trip diverged: %+v", roundTrip)
+	}
+}
+
+func TestMarshalJSONJavaScriptNormalizesUnsafeIntegers(t *testing.T) {
+	cases := []struct {
+		name     string
+		value    any
+		expected string
+	}{
+		{"safe int64 stays exact", map[string]any{"n": int64(9007199254740992)}, `{"n":9007199254740992}`},
+		{"unsafe int64 rounds like JavaScript", map[string]any{"n": int64(9007199254740993)}, `{"n":9007199254740992}`},
+		{"negative unsafe int64 rounds", map[string]any{"n": int64(-9007199254740993)}, `{"n":-9007199254740992}`},
+		{"huge uint64 rounds", map[string]any{"n": uint64(18446744073709551615)}, `{"n":18446744073709552000}`},
+		{"small uint64 stays exact", map[string]any{"n": uint64(42)}, `{"n":42}`},
+	}
+	for _, testCase := range cases {
+		actual, err := MarshalJSONJavaScript(testCase.value)
+		if err != nil {
+			t.Fatalf("%s: %v", testCase.name, err)
+		}
+		if string(actual) != testCase.expected {
+			t.Fatalf("%s: got %s; want %s", testCase.name, string(actual), testCase.expected)
+		}
+	}
+}
+
+func TestMarshalJSONJavaScriptKeepsPolicyRawMessage(t *testing.T) {
+	value, err := WithPolicy(map[string]any{"userId": "u_1"}, PolicyOverride{Access: AccessPrivate})
+	if err != nil {
+		t.Fatalf("policy could not be attached: %v", err)
+	}
+	actual, err := MarshalJSONJavaScript(value)
+	if err != nil {
+		t.Fatalf("policy metadata could not be serialized: %v", err)
+	}
+	var decoded struct {
+		UserId   string         `json:"userId"`
+		Raildrop PolicyOverride `json:"$raildrop"`
+	}
+	if err := json.Unmarshal(actual, &decoded); err != nil {
+		t.Fatalf("policy metadata could not be decoded: %v", err)
+	}
+	if decoded.UserId != "u_1" || decoded.Raildrop.Access != AccessPrivate {
+		t.Fatalf("policy override was lost: %s", string(actual))
+	}
 }

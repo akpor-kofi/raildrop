@@ -26,13 +26,8 @@ const payload = {
   multipart: null,
 } as const;
 
-const metadataRaw = JSON.stringify({
-  userId: 'u_123',
-  role: 'admin',
-  2: 'two',
-  10: 'ten',
-  note: 'line\u2028sep\u2029end',
-});
+const metadataRaw =
+  '{"2":"two","10":"ten","userId":"u_123","role":"admin","note":"line\u2028sep\u2029end","big":9007199254740993}';
 const inputRaw = JSON.stringify({ albumId: 7 });
 
 mkdirSync(fixtureDirectory, { recursive: true });
@@ -76,7 +71,6 @@ const tsToken = createSessionToken(
   },
   secret
 );
-
 mkdirSync(dirname(fixturePath), { recursive: true });
 writeFileSync(
   fixturePath,
