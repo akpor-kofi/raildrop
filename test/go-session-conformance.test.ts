@@ -14,6 +14,14 @@ const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
   goToken: string;
 };
 
+type ConformanceMetadata = {
+  userId: string;
+  role: string;
+  '2': string;
+  '10': string;
+  note: string;
+};
+
 test('TypeScript reads tokens minted by the Go SDK', () => {
   const payload = readSessionToken(fixture.goToken, fixture.secret);
   assert.equal(payload.version, 1);
@@ -30,7 +38,12 @@ test('TypeScript reads tokens minted by the Go SDK', () => {
   assert.equal(payload.retention, 'permanent');
   assert.equal(payload.expiresAt, null);
   assert.equal(payload.uploadExpiresAt, 4102444800000);
-  assert.deepEqual(payload.metadata, { userId: 'u_123', role: 'admin' });
+  const metadata = payload.metadata as ConformanceMetadata;
+  assert.equal(metadata.userId, 'u_123');
+  assert.equal(metadata.role, 'admin');
+  assert.equal(metadata['2'], 'two');
+  assert.equal(metadata['10'], 'ten');
+  assert.equal(metadata.note, 'line\u2028sep\u2029end');
   assert.deepEqual(payload.input, { albumId: 7 });
   assert.equal(payload.multipart, null);
   assert.equal(JSON.stringify(payload.metadata), fixture.metadataRaw);
@@ -40,7 +53,8 @@ test('TypeScript reads tokens minted by the Go SDK', () => {
 test('TypeScript-minted tokens stay stable across the fixture', () => {
   const payload = readSessionToken(fixture.tsToken, fixture.secret);
   assert.equal(payload.id, 'conformance-upload-id');
-  assert.deepEqual(payload.metadata, { userId: 'u_123', role: 'admin' });
+  assert.equal((payload.metadata as ConformanceMetadata).userId, 'u_123');
+  assert.equal(JSON.stringify(payload.metadata), fixture.metadataRaw);
   assert.throws(
     () => readSessionToken(fixture.tsToken, 'another-secret-that-is-at-least-thirty-two-characters'),
     (error) => error instanceof Error && 'code' in error && (error as { code: string }).code === 'FORBIDDEN'

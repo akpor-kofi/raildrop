@@ -3,6 +3,8 @@ package s3store
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -14,6 +16,11 @@ import (
 
 	raildrop "github.com/akpor-kofi/raildrop/sdk/go"
 )
+
+func md5Digest(payload []byte) []byte {
+	sum := md5.Sum(payload)
+	return sum[:]
+}
 
 type RailwayBucketStorage struct {
 	config raildrop.BucketConfig
@@ -107,6 +114,9 @@ func (storage *RailwayBucketStorage) requestPath(key string) string {
 func (storage *RailwayBucketStorage) rootPath() string {
 	if storage.config.ForcePathStyle {
 		return storage.prefix + "/" + storage.config.Bucket
+	}
+	if storage.prefix == "" {
+		return "/"
 	}
 	return storage.prefix
 }
@@ -410,8 +420,9 @@ func (storage *RailwayBucketStorage) Delete(ctx context.Context, keys ...string)
 		if err != nil {
 			return fmt.Errorf("s3store: delete batch could not be encoded: %w", err)
 		}
+		contentMD5 := base64.StdEncoding.EncodeToString(md5Digest(payload))
 		query := url.Values{"delete": {""}}
-		response, err := storage.do(ctx, http.MethodPost, storage.rootPath(), query, map[string]string{"content-type": "application/xml"}, payload)
+		response, err := storage.do(ctx, http.MethodPost, storage.rootPath(), query, map[string]string{"content-type": "application/xml", "content-md5": contentMD5}, payload)
 		if err != nil {
 			return err
 		}

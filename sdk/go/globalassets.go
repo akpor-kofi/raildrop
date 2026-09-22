@@ -167,10 +167,13 @@ func writeGlobalAssetEntries(ctx context.Context, storage Storage, sources []Glo
 		}
 		verifiedChecksum := ""
 		if verifiedBody != nil {
-			defer verifiedBody.Close()
 			verifiedBytes, err := io.ReadAll(verifiedBody.Body)
+			closeErr := verifiedBody.Close()
 			if err != nil {
 				return nil, err
+			}
+			if closeErr != nil {
+				return nil, closeErr
 			}
 			verifiedChecksum = sha256Hex(verifiedBytes)
 		}

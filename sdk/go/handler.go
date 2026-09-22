@@ -169,7 +169,10 @@ func validateFiles(route *Route, files []RequestedFile) error {
 			}
 			limit = parsed
 		}
-		if limit > 0 && file.Size > limit {
+		if limit <= 0 {
+			return NewError(CodeBadRequest, "File size limits must be positive integers.")
+		}
+		if file.Size > limit {
 			return NewError(CodeTooLarge, file.Name+" exceeds the route size limit.")
 		}
 		counts[exactKey]++
@@ -354,15 +357,19 @@ func (config HandlerConfig) prepare(w http.ResponseWriter, req *http.Request, bo
 				return
 			}
 			parts := make([]PreparedPart, int(partCount))
+			var failureMutex sync.Mutex
 			var failure error
 			var waitGroup sync.WaitGroup
 			for index := int64(0); index < partCount; index++ {
 				waitGroup.Add(1)
 				go func(index int64) {
 					defer waitGroup.Done()
+					failureMutex.Lock()
 					if failure != nil {
+						failureMutex.Unlock()
 						return
 					}
+					failureMutex.Unlock()
 					start := index * partSize
 					end := (index + 1) * partSize
 					if end > file.Size {
@@ -375,16 +382,23 @@ func (config HandlerConfig) prepare(w http.ResponseWriter, req *http.Request, bo
 						ExpiresIn:  uploadExpiry,
 					})
 					if err != nil {
-						failure = err
+						failureMutex.Lock()
+						if failure == nil {
+							failure = err
+						}
+						failureMutex.Unlock()
 						return
 					}
 					parts[index] = PreparedPart{PartNumber: int(index + 1), Start: start, End: end, URL: url}
 				}(index)
 			}
 			waitGroup.Wait()
-			if failure != nil {
+			failureMutex.Lock()
+			prepareFailure := failure
+			failureMutex.Unlock()
+			if prepareFailure != nil {
 				_ = config.Storage.AbortMultipart(ctx, key, uploadID)
-				writeError(w, failure)
+				writeError(w, prepareFailure)
 				return
 			}
 			upload.Parts = parts

@@ -25,8 +25,8 @@ type SessionPayload struct {
 	ExpiresAt       *string           `json:"expiresAt"`
 	UploadExpiresAt int64             `json:"uploadExpiresAt"`
 	MetadataDigest  string            `json:"metadataDigest"`
-	Metadata        json.RawMessage   `json:"metadata"`
-	Input           json.RawMessage   `json:"input"`
+	Metadata        json.RawMessage   `json:"metadata,omitempty"`
+	Input           json.RawMessage   `json:"input,omitempty"`
 	Multipart       *MultipartSession `json:"multipart"`
 }
 
@@ -62,12 +62,19 @@ func CompactJSON(value []byte) (json.RawMessage, error) {
 }
 
 func MetadataDigest(metadata json.RawMessage) string {
-	raw, _ := MarshalJSON(struct {
-		Metadata json.RawMessage `json:"metadata"`
-	}{metadata})
+	var raw json.RawMessage
+	if len(metadata) == 0 {
+		raw, _ = MarshalJSON(emptyMetadataEnvelope{})
+	} else {
+		raw, _ = MarshalJSON(struct {
+			Metadata json.RawMessage `json:"metadata"`
+		}{metadata})
+	}
 	sum := sha256.Sum256(raw)
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
+
+type emptyMetadataEnvelope struct{}
 
 func sessionEncryptionKey(secret string) []byte {
 	sum := sha256.Sum256([]byte(sessionEncryptionInfo + secret))

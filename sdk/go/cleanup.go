@@ -41,6 +41,9 @@ func CleanupExpiredObjects(ctx context.Context, storage Storage, now time.Time, 
 				if err != nil {
 					return nil, err
 				}
+				if stored == nil {
+					continue
+				}
 				exactExpiry, ok := stored.Metadata["raildrop-expires-at"]
 				if !ok {
 					expiredKeys = append(expiredKeys, object.Key)

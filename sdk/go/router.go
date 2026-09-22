@@ -3,6 +3,7 @@ package raildrop
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -128,11 +129,20 @@ func WithTemporaryTTL(ttlSeconds int64) RouteOption {
 
 const DefaultTemporaryTTLSeconds = 7 * 24 * 60 * 60
 
+func validateRouteRules(rules Rules) {
+	for key, rule := range rules {
+		if rule.MaxFileSize == "" && rule.MaxFileSizeBytes <= 0 {
+			panic(fmt.Sprintf("raildrop: route rule %q is missing MaxFileSize (or MaxFileSizeBytes)", key))
+		}
+	}
+}
+
 func DefineRoute[Input any, Metadata any, Output any](
 	rules Rules,
 	definition RouteDefinition[Input, Metadata, Output],
 	options ...RouteOption,
 ) *Route {
+	validateRouteRules(rules)
 	resolved := RouteOptions{
 		Access:              AccessPublic,
 		Retention:           RetentionPermanent,
@@ -189,7 +199,7 @@ func DefineRoute[Input any, Metadata any, Output any](
 			if err != nil {
 				return nil, err
 			}
-			return MarshalJSON(metadata)
+			return MarshalJSONJavaScript(metadata)
 		}
 	} else {
 		route.Middleware = func(context.Context, MiddlewareArgs) (json.RawMessage, error) {

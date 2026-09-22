@@ -72,8 +72,11 @@ func TestReadSessionTokenAcceptsTypeScriptTokens(t *testing.T) {
 	if err := json.Unmarshal(payload.Metadata, &metadata); err != nil {
 		t.Fatalf("metadata could not be decoded: %v", err)
 	}
-	if metadata["userId"] != "u_123" || metadata["role"] != "admin" {
+	if metadata["userId"] != "u_123" || metadata["role"] != "admin" || metadata["2"] != "two" || metadata["10"] != "ten" {
 		t.Fatalf("metadata values diverged: %v", metadata)
+	}
+	if metadata["note"] != "line\u2028sep\u2029end" {
+		t.Fatalf("metadata line separators diverged: %q", metadata["note"])
 	}
 }
 
@@ -88,6 +91,13 @@ func TestReadSessionTokenAcceptsGoTokens(t *testing.T) {
 	}
 	if string(payload.Metadata) != string(fixture.MetadataRaw) {
 		t.Fatalf("metadata bytes diverged: %s", string(payload.Metadata))
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal(payload.Metadata, &metadata); err != nil {
+		t.Fatalf("metadata could not be decoded: %v", err)
+	}
+	if metadata["note"] != "line\u2028sep\u2029end" {
+		t.Fatalf("metadata line separators diverged: %q", metadata["note"])
 	}
 }
 

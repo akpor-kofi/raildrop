@@ -163,7 +163,7 @@ func (client *Client) retry(ctx context.Context, callback func() error) error {
 	return lastError
 }
 
-func (client *Client) post(ctx context.Context, payload any, target any) error {
+func (client *Client) post(ctx context.Context, payload any, target any, extraHeaders http.Header) error {
 	body, err := MarshalJSON(payload)
 	if err != nil {
 		return WrapError(CodeBadRequest, "Raildrop request could not be encoded.", err)
@@ -172,7 +172,7 @@ func (client *Client) post(ctx context.Context, payload any, target any) error {
 	if err != nil {
 		return WrapError(CodeBadRequest, "Raildrop request could not be created.", err)
 	}
-	client.applyHeaders(request, nil, "application/json")
+	client.applyHeaders(request, extraHeaders, "application/json")
 	response, err := client.client.Do(request)
 	if err != nil {
 		return WrapError(CodeStorageError, "Raildrop request failed.", err)
@@ -180,7 +180,7 @@ func (client *Client) post(ctx context.Context, payload any, target any) error {
 	return readResponse(response, target)
 }
 
-func (client *Client) Prepare(ctx context.Context, endpoint string, input any, files []UploadFile) ([]PreparedFile, error) {
+func (client *Client) Prepare(ctx context.Context, endpoint string, input any, files []UploadFile, extraHeaders ...http.Header) ([]PreparedFile, error) {
 	wireFiles := make([]RequestedFile, 0, len(files))
 	for _, file := range files {
 		wireFiles = append(wireFiles, RequestedFile{
@@ -198,7 +198,7 @@ func (client *Client) Prepare(ctx context.Context, endpoint string, input any, f
 			"endpoint": endpoint,
 			"input":    input,
 			"files":    wireFiles,
-		}, &prepared)
+		}, &prepared, mergeHeaders(extraHeaders))
 	})
 	if err != nil {
 		return nil, err
@@ -334,7 +334,7 @@ func (client *Client) uploadPut(ctx context.Context, file UploadFile, prepared P
 	return parts, nil
 }
 
-func (client *Client) Finalize(ctx context.Context, endpoint string, prepared PreparedFile, parts []CompletedPart) (*UploadedFile, error) {
+func (client *Client) Finalize(ctx context.Context, endpoint string, prepared PreparedFile, parts []CompletedPart, extraHeaders ...http.Header) (*UploadedFile, error) {
 	var wireParts []CompletedPart
 	if parts != nil {
 		wireParts = parts
@@ -346,7 +346,7 @@ func (client *Client) Finalize(ctx context.Context, endpoint string, prepared Pr
 			"endpoint":     endpoint,
 			"sessionToken": prepared.SessionToken,
 			"parts":        wireParts,
-		}, &result)
+		}, &result, mergeHeaders(extraHeaders))
 	})
 	if err != nil {
 		return nil, err
@@ -354,20 +354,38 @@ func (client *Client) Finalize(ctx context.Context, endpoint string, prepared Pr
 	return &result, nil
 }
 
-func (client *Client) Abort(ctx context.Context, endpoint string, prepared PreparedFile) error {
+func (client *Client) Abort(ctx context.Context, endpoint string, prepared PreparedFile, extraHeaders ...http.Header) error {
 	raw := json.RawMessage(nil)
 	return client.post(ctx, map[string]any{
 		"action":       "abort",
 		"endpoint":     endpoint,
 		"sessionToken": prepared.SessionToken,
-	}, &raw)
+	}, &raw, mergeHeaders(extraHeaders))
+}
+
+func mergeHeaders(headers []http.Header) http.Header {
+	var merged http.Header
+	for _, header := range headers {
+		if header == nil {
+			continue
+		}
+		if merged == nil {
+			merged = make(http.Header, len(header))
+		}
+		for name, values := range header {
+			for _, value := range values {
+				merged.Add(name, value)
+			}
+		}
+	}
+	return merged
 }
 
 func (client *Client) Upload(ctx context.Context, endpoint string, options UploadOptions) ([]UploadedFile, error) {
 	if len(options.Files) == 0 {
 		return nil, NewError(CodeBadRequest, "At least one file is required.")
 	}
-	prepared, err := client.Prepare(ctx, endpoint, options.Input, options.Files)
+	prepared, err := client.Prepare(ctx, endpoint, options.Input, options.Files, options.Headers)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +399,7 @@ func (client *Client) Upload(ctx context.Context, endpoint string, options Uploa
 		if err != nil {
 			return nil, err
 		}
-		uploaded, err := client.Finalize(ctx, endpoint, entry, parts)
+		uploaded, err := client.Finalize(ctx, endpoint, entry, parts, options.Headers)
 		if err != nil {
 			return nil, err
 		}

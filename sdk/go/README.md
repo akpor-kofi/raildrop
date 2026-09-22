@@ -310,6 +310,10 @@ Deliberate differences:
 - The Go gateway runs behind `net/http`, which does not perform WHATWG URL normalization;
   traversal-encoded paths (`%2e%2e`) are rejected as invalid asset paths (400) instead of
   being resolved first.
+- Session metadata is serialized with JavaScript `JSON.stringify` semantics (integer-like
+  keys ordered first, U+2028/U+2029 left raw, absent metadata omitted) so digests verify
+  across SDKs. Route rules must declare `MaxFileSize` (or `MaxFileSizeBytes`);
+  `DefineRoute` fails fast otherwise.
 
 ## Wire-protocol conformance
 

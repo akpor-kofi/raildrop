@@ -214,3 +214,64 @@ func TestClientSurfacesProtocolErrors(t *testing.T) {
 		t.Fatalf("unexpected error message: %s", raildropErr.Message)
 	}
 }
+
+func TestClientForwardsPerUploadHeadersToProtocolCalls(t *testing.T) {
+	mem := raildroptest.NewMemoryStorage()
+	e2e := newE2EStorage("")
+	e2e.MemoryStorage = mem
+	uploadHandler := raildrop.NewHandler(raildrop.HandlerConfig{
+		Router:        buildTestRouter(),
+		Storage:       e2e,
+		Secret:        testSecret,
+		PublicBaseURL: "https://assets.raildrop.test",
+	})
+	var seen []string
+	var seenMutex sync.Mutex
+	tracked := http.NewServeMux()
+	tracked.HandleFunc("/storage/", func(writer http.ResponseWriter, request *http.Request) {
+		key := strings.TrimPrefix(request.URL.Path, "/storage/")
+		if _, err := mem.Put(request.Context(), raildrop.PutArgs{
+			Key:         key,
+			Body:        readAll(t, request.Body),
+			ContentType: request.Header.Get("Content-Type"),
+			Metadata: map[string]string{
+				"raildrop-id":        request.Header.Get("x-amz-meta-raildrop-id"),
+				"raildrop-access":    request.Header.Get("x-amz-meta-raildrop-access"),
+				"raildrop-retention": request.Header.Get("x-amz-meta-raildrop-retention"),
+				"raildrop-name":      request.Header.Get("x-amz-meta-raildrop-name"),
+			},
+		}); err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writer.Header().Set("ETag", "\"etag-object\"")
+		writer.WriteHeader(http.StatusOK)
+	})
+	tracked.Handle("/api/upload", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		seenMutex.Lock()
+		seen = append(seen, request.Method+" "+request.Header.Get("Authorization"))
+		seenMutex.Unlock()
+		uploadHandler.ServeHTTP(writer, request)
+	}))
+	server := httptest.NewServer(tracked)
+	defer server.Close()
+	e2e.serverURL = server.URL
+	client := raildrop.NewClient(raildrop.ClientConfig{
+		URL: server.URL + "/api/upload",
+	})
+	_, err := client.Upload(context.Background(), "image", raildrop.UploadOptions{
+		Headers: http.Header{"Authorization": []string{"Bearer token-1"}},
+		Files:   []raildrop.UploadFile{{Name: "photo.png", Type: "image/png", Body: []byte("abc")}},
+	})
+	if err != nil {
+		t.Fatalf("authenticated upload failed: %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("expected prepare and finalize through the wrapper, saw %d calls", len(seen))
+	}
+	for index, authorization := range seen {
+		if !strings.HasSuffix(authorization, "Bearer token-1") {
+			t.Fatalf("protocol call %d did not forward the Authorization header: %q", index, authorization)
+		}
+	}
+}
